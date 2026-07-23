@@ -1,0 +1,1220 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FBX Bench — バイナリ FBX 編集台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1517; --panel:#131f22; --panel2:#18282c; --raised:#1d3238;
+  --line:#24393e; --line2:#2f4a51;
+  --ink:#dce8e9; --dim:#8ba4a9; --faint:#5c757b;
+  --amber:#f0a63a; --amber-dim:#8a6524;
+  --red:#ff6b5e; --yellow:#e0c04a; --green:#4fc3a1;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --ui:"Helvetica Neue",Arial,"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo",sans-serif;
+  --row:26px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--bg);color:var(--ink);
+  font-family:var(--ui);font-size:13px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;overflow:hidden;
+}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+input,select{font:inherit;color:inherit}
+::selection{background:var(--amber);color:#0d1517}
+
+/* ---------- shell ---------- */
+#app{display:flex;flex-direction:column;height:100vh}
+
+.bar{
+  display:flex;align-items:center;gap:14px;padding:0 14px;height:46px;
+  background:var(--panel);border-bottom:1px solid var(--line);flex:0 0 auto;
+}
+.brand{
+  font-family:var(--mono);font-weight:600;font-size:12px;letter-spacing:.16em;
+  color:var(--amber);white-space:nowrap;
+}
+.brand span{color:var(--faint)}
+.fname{
+  font-family:var(--mono);font-size:12px;color:var(--ink);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;
+}
+.chips{display:flex;gap:6px;flex:1 1 auto;min-width:0;align-items:center}
+.chip{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;
+  padding:2px 7px;border:1px solid var(--line2);border-radius:2px;
+  color:var(--dim);white-space:nowrap;
+}
+.chip.ok{color:var(--green);border-color:#2c5a4d}
+.chip.bad{color:var(--red);border-color:#5e3230}
+.chip.hot{color:var(--amber);border-color:var(--amber-dim)}
+.btn{
+  font-family:var(--mono);font-size:11px;letter-spacing:.08em;
+  padding:5px 12px;border:1px solid var(--line2);border-radius:2px;
+  color:var(--ink);background:var(--panel2);white-space:nowrap;
+}
+.btn:hover{background:var(--raised);border-color:var(--amber-dim)}
+.btn:disabled{opacity:.35;cursor:default}
+.btn:disabled:hover{background:var(--panel2);border-color:var(--line2)}
+.btn.primary{color:#0d1517;background:var(--amber);border-color:var(--amber);font-weight:600}
+.btn.primary:hover{background:#ffbb55}
+.btn:focus-visible,.tab:focus-visible,.trow:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
+
+/* ---------- byte map (signature) ---------- */
+.map{flex:0 0 auto;background:var(--panel);border-bottom:1px solid var(--line);padding:9px 14px 11px}
+.map-head{
+  display:flex;justify-content:space-between;font-family:var(--mono);
+  font-size:10px;letter-spacing:.14em;color:var(--faint);margin-bottom:6px;
+}
+.map-track{
+  position:relative;height:30px;display:flex;gap:1px;
+  background:var(--bg);border:1px solid var(--line);border-radius:2px;overflow:hidden;
+}
+.seg{
+  position:relative;min-width:2px;background:var(--panel2);
+  display:flex;align-items:center;justify-content:center;overflow:hidden;
+  transition:background .12s ease;
+}
+.seg:hover{background:var(--raised)}
+.seg b{
+  font-family:var(--mono);font-weight:500;font-size:9.5px;letter-spacing:.08em;
+  color:var(--dim);white-space:nowrap;padding:0 6px;pointer-events:none;
+}
+.seg.on{background:var(--amber-dim)}
+.seg.on b{color:#ffe0ac}
+.cursor{
+  position:absolute;top:0;bottom:0;background:var(--amber);
+  box-shadow:0 0 8px rgba(240,166,58,.8);pointer-events:none;
+  min-width:2px;opacity:0;transition:opacity .15s ease;
+}
+.cursor.on{opacity:1}
+
+/* ---------- split ---------- */
+.split{flex:1 1 auto;display:flex;min-height:0}
+.pane{display:flex;flex-direction:column;min-height:0;min-width:0}
+.tree-pane{flex:0 0 42%;border-right:1px solid var(--line);background:var(--panel)}
+.side{flex:1 1 auto;background:var(--panel)}
+
+.phead{
+  flex:0 0 auto;display:flex;align-items:center;gap:8px;
+  height:32px;padding:0 10px;border-bottom:1px solid var(--line);background:var(--panel2);
+}
+.plabel{font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--faint)}
+.find{
+  flex:1;background:var(--bg);border:1px solid var(--line);border-radius:2px;
+  padding:3px 8px;font-family:var(--mono);font-size:11.5px;color:var(--ink);min-width:0;
+}
+.find::placeholder{color:var(--faint)}
+.find:focus{outline:none;border-color:var(--amber-dim)}
+
+.scroll{flex:1 1 auto;overflow:auto;overscroll-behavior:contain}
+.scroll::-webkit-scrollbar{width:11px;height:11px}
+.scroll::-webkit-scrollbar-track{background:var(--bg)}
+.scroll::-webkit-scrollbar-thumb{background:var(--line);border:3px solid var(--bg);border-radius:6px}
+.scroll::-webkit-scrollbar-thumb:hover{background:var(--line2)}
+
+/* ---------- tree ---------- */
+.trow{
+  display:flex;align-items:center;height:var(--row);padding-right:8px;
+  font-family:var(--mono);font-size:11.5px;white-space:nowrap;cursor:default;
+  border-left:2px solid transparent;
+}
+.trow:hover{background:var(--panel2)}
+.trow.sel{background:var(--raised);border-left-color:var(--amber)}
+.tw{
+  width:16px;flex:0 0 16px;text-align:center;color:var(--faint);
+  font-size:9px;cursor:pointer;user-select:none;
+}
+.tw:hover{color:var(--amber)}
+.tn{color:var(--ink)}
+.tv{color:var(--amber);margin-left:8px}
+.tt{color:var(--faint);margin-left:8px}
+.tc{color:var(--dim);margin-left:8px;font-size:10.5px}
+.trow.edited .tn{color:var(--amber)}
+.more{
+  font-family:var(--mono);font-size:10.5px;color:var(--dim);
+  padding:4px 0 4px 34px;cursor:pointer;
+}
+.more:hover{color:var(--amber)}
+
+/* ---------- tabs / panel ---------- */
+.tabs{display:flex;gap:2px;flex:1}
+.tab{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;
+  padding:4px 10px;color:var(--faint);border:1px solid transparent;border-radius:2px;
+}
+.tab:hover{color:var(--dim)}
+.tab.on{color:var(--amber);border-color:var(--amber-dim);background:var(--bg)}
+.tab i{font-style:normal;color:var(--red);margin-left:5px}
+
+.body{padding:12px 14px 24px}
+.kv{display:grid;grid-template-columns:88px 1fr;gap:5px 12px;margin-bottom:14px}
+.kv dt{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--faint);padding-top:2px}
+.kv dd{margin:0;font-family:var(--mono);font-size:11.5px;color:var(--ink);word-break:break-all}
+.kv dd em{font-style:normal;color:var(--amber)}
+
+.sec{
+  font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--faint);
+  border-bottom:1px solid var(--line);padding-bottom:5px;margin:18px 0 9px;
+}
+.sec:first-child{margin-top:0}
+
+table.props{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11.5px}
+table.props th{
+  text-align:left;font-weight:500;font-size:9.5px;letter-spacing:.1em;
+  color:var(--faint);padding:0 8px 5px 0;border-bottom:1px solid var(--line);
+}
+table.props td{padding:3px 8px 3px 0;border-bottom:1px solid var(--panel2);vertical-align:top}
+table.props tr:hover td{background:var(--panel2)}
+.ty{color:var(--dim);width:1%;white-space:nowrap}
+.val{color:var(--amber);word-break:break-all}
+.val input{
+  width:100%;background:var(--bg);border:1px solid var(--line);border-radius:2px;
+  padding:2px 6px;font-family:var(--mono);font-size:11.5px;color:var(--amber);
+}
+.val input:focus{outline:none;border-color:var(--amber)}
+.arr{color:var(--dim)}
+.arr button{color:var(--faint);text-decoration:underline;font-size:10.5px;margin-left:6px}
+.arr button:hover{color:var(--amber)}
+.dump{
+  margin-top:5px;padding:6px 8px;background:var(--bg);border:1px solid var(--line);
+  border-radius:2px;color:var(--dim);font-size:10.5px;max-height:150px;overflow:auto;
+  white-space:pre-wrap;word-break:break-all;
+}
+
+.hex{
+  font-family:var(--mono);font-size:10.5px;line-height:1.65;color:var(--dim);
+  background:var(--bg);border:1px solid var(--line);border-radius:2px;
+  padding:8px 10px;overflow-x:auto;white-space:pre;
+}
+.hex .o{color:var(--faint)}
+.hex .h{color:var(--amber)}
+
+.acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+
+/* ---------- issues ---------- */
+.issue{
+  display:flex;gap:9px;padding:7px 0;border-bottom:1px solid var(--panel2);
+  cursor:pointer;align-items:flex-start;
+}
+.issue:hover{background:var(--panel2)}
+.sev{
+  font-family:var(--mono);font-size:9px;letter-spacing:.08em;padding:2px 5px;
+  border-radius:2px;flex:0 0 auto;margin-top:1px;
+}
+.sev.fatal{background:#4a2320;color:var(--red)}
+.sev.warn{background:#453c1c;color:var(--yellow)}
+.sev.info{background:var(--panel2);color:var(--dim)}
+.itxt{min-width:0;flex:1}
+.icode{font-family:var(--mono);font-size:10.5px;color:var(--dim);letter-spacing:.04em}
+.itarget{font-family:var(--mono);font-size:11.5px;color:var(--ink);word-break:break-all}
+.idetail{font-size:11.5px;color:var(--dim);margin-top:1px}
+
+.log{font-family:var(--mono);font-size:11px;padding:5px 0;border-bottom:1px solid var(--panel2);color:var(--dim)}
+.log b{color:var(--ink);font-weight:500}
+.log s{color:var(--red)}
+
+.note{color:var(--dim);font-size:11.5px;line-height:1.7}
+.note code{font-family:var(--mono);color:var(--amber);font-size:11px}
+
+/* ---------- empty / drop ---------- */
+.empty{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:20px;padding:40px;text-align:center;
+}
+.empty h1{
+  font-family:var(--mono);font-weight:600;font-size:15px;letter-spacing:.2em;
+  color:var(--ink);margin:0;
+}
+.empty p{color:var(--dim);max-width:440px;margin:0;font-size:12.5px;line-height:1.8}
+.empty .rule{width:60px;height:1px;background:var(--amber)}
+.drop-hint{
+  border:1px dashed var(--line2);border-radius:3px;padding:26px 40px;
+  font-family:var(--mono);font-size:11.5px;color:var(--faint);letter-spacing:.06em;
+}
+body.dragging .drop-hint{border-color:var(--amber);color:var(--amber)}
+
+.toast{
+  position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(14px);
+  background:var(--raised);border:1px solid var(--line2);border-radius:3px;
+  padding:9px 18px;font-family:var(--mono);font-size:11.5px;color:var(--ink);
+  opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s ease;z-index:50;
+}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.err{border-color:#5e3230;color:var(--red)}
+
+@media (max-width:900px){
+  .split{flex-direction:column}
+  .tree-pane{flex:0 0 44%;border-right:none;border-bottom:1px solid var(--line)}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="bar">
+    <div class="brand">FBX<span>·</span>BENCH</div>
+    <div class="fname" id="fname"></div>
+    <div class="chips" id="chips"></div>
+    <button class="btn" id="open">開く</button>
+    <button class="btn" id="undo" disabled>元に戻す</button>
+    <button class="btn primary" id="save" disabled>保存</button>
+    <input type="file" id="file" accept=".fbx" hidden>
+  </header>
+
+  <div class="map" id="map" hidden>
+    <div class="map-head"><span id="maplabel">FILE LAYOUT</span><span id="mapsize"></span></div>
+    <div class="map-track" id="track"><div class="cursor" id="cursor"></div></div>
+  </div>
+
+  <div class="split" id="split" hidden>
+    <section class="pane tree-pane">
+      <div class="phead">
+        <span class="plabel">NODES</span>
+        <input class="find" id="find" placeholder="名前で絞り込む">
+      </div>
+      <div class="scroll" id="tree"></div>
+    </section>
+    <section class="pane side">
+      <div class="phead">
+        <div class="tabs">
+          <button class="tab on" data-tab="prop">プロパティ</button>
+          <button class="tab" data-tab="audit">検査<i id="badge"></i></button>
+          <button class="tab" data-tab="log">変更</button>
+          <button class="tab" data-tab="help">使い方</button>
+        </div>
+      </div>
+      <div class="scroll"><div class="body" id="panel"></div></div>
+    </section>
+  </div>
+
+  <div class="empty" id="empty">
+    <div class="brand" style="font-size:11px">BINARY FBX WORKBENCH</div>
+    <h1>FBX を開く</h1>
+    <div class="rule"></div>
+    <p>バイナリ FBX のノード構造をそのまま読み込み、値の書き換え・ノードの削除・破損箇所の修復を行って保存します。触っていない部分は 1 バイトも変化しません。ファイルはこの画面から外に出ません。</p>
+    <div class="drop-hint" id="dz">ここに .fbx をドロップ　または　開く</div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+<script>
+"use strict";
+/* ==========================================================================
+   FBX バイナリ パーサ / シリアライザ
+   プロパティは「型文字を含む生バイト列」のまま保持する。これが可逆性の要で、
+   触れていない部分は読み書きしても 1 バイトも変わらない。
+   ========================================================================== */
+const HDR = "Kaydara FBX Binary  \0";
+const MAGIC = [0xf8,0x5a,0x8c,0x6a,0xde,0xf5,0xd9,0x7e,0xec,0xe9,0x0c,0xe3,0x75,0x8f,0x29,0x0b];
+const SCALAR = {Y:2,C:1,I:4,F:4,D:8,L:8};
+const ARRAY  = {f:4,d:8,l:8,i:4,b:1,c:1};
+
+class FNode{
+  constructor(name,props,kids,term){
+    this.name=name; this.props=props||[]; this.kids=kids||[]; this.term=!!term;
+    this.parent=null; this.off=0;
+  }
+  size(wide){
+    const h = wide?24:12;
+    let s = h + 1 + utf8len(this.name);
+    for(const p of this.props) s += p.length;
+    for(const k of this.kids) s += k.size(wide);
+    if(this.term) s += h + 1;
+    return s;
+  }
+  find(n){ for(const k of this.kids) if(k.name===n) return k; return null; }
+  findAll(n){ return this.kids.filter(k=>k.name===n); }
+  *walk(){ yield this; for(const k of this.kids) yield* k.walk(); }
+}
+
+const enc = new TextEncoder(), dec = new TextDecoder("utf-8");
+function utf8len(s){ return enc.encode(s).length; }
+
+function propSize(u8,pos){
+  const t = String.fromCharCode(u8[pos]);
+  if(SCALAR[t]!==undefined) return 1+SCALAR[t];
+  if(t==="S"||t==="R") return 5 + rdU32(u8,pos+1);
+  if(ARRAY[t]!==undefined) return 13 + rdU32(u8,pos+9);
+  throw new Error("未知のプロパティ型 '"+t+"' (offset "+pos+")");
+}
+function rdU32(u8,p){ return (u8[p] | u8[p+1]<<8 | u8[p+2]<<16 | u8[p+3]<<24)>>>0; }
+
+function parse(buf){
+  const u8 = new Uint8Array(buf), dv = new DataView(buf);
+  for(let i=0;i<21;i++){
+    if(u8[i]!==HDR.charCodeAt(i)){
+      const head = dec.decode(u8.subarray(0,Math.min(2048,u8.length)));
+      if(head.includes("FBXHeaderExtension")) throw new Error("ASCII 形式の FBX には対応していません");
+      throw new Error("バイナリ FBX ではありません");
+    }
+  }
+  const version = dv.getUint32(23,true);
+  const wide = version>=7500, NL = wide?25:13;
+  const readNode = (pos)=>{
+    let end,nprop,plen;
+    if(wide){
+      end=Number(dv.getBigUint64(pos,true)); nprop=Number(dv.getBigUint64(pos+8,true));
+      plen=Number(dv.getBigUint64(pos+16,true)); pos+=24;
+    }else{
+      end=dv.getUint32(pos,true); nprop=dv.getUint32(pos+4,true);
+      plen=dv.getUint32(pos+8,true); pos+=12;
+    }
+    const nl=u8[pos]; pos+=1;
+    const name=dec.decode(u8.subarray(pos,pos+nl)); pos+=nl;
+    if(end===0) return [null,pos];
+    const props=[];
+    for(let i=0;i<nprop;i++){ const n=propSize(u8,pos); props.push(u8.slice(pos,pos+n)); pos+=n; }
+    const kids=[]; let term=false;
+    while(pos<end){
+      let z=true; for(let i=0;i<NL;i++) if(u8[pos+i]!==0){ z=false; break; }
+      if(z){ term=true; pos+=NL; break; }
+      const [k,np]=readNode(pos); pos=np;
+      if(k===null){ term=true; break; }
+      kids.push(k);
+    }
+    if(pos!==end) throw new Error("ノード '"+name+"' の終端が不整合 ("+pos+" ≠ "+end+")");
+    return [new FNode(name,props,kids,term),end];
+  };
+  let pos=27; const top=[];
+  try{
+    for(;;){
+      if(pos+NL>u8.length) throw new RangeError("eof");
+      let z=true; for(let i=0;i<NL;i++) if(u8[pos+i]!==0){ z=false; break; }
+      if(z){ pos+=NL; break; }
+      const [n,np]=readNode(pos); pos=np;
+      if(n===null) break;
+      top.push(n);
+    }
+  }catch(e){
+    if(e instanceof RangeError)
+      throw new Error("ファイルが途中で切れているか破損しています (offset "+pos+" 付近)");
+    throw e;
+  }
+  const footer = u8.slice(pos,pos+16);
+  const doc = {version,wide,top,footer,bytes:u8};
+  for(const r of top) setParents(r,null);
+  return doc;
+}
+function setParents(n,p){ n.parent=p; for(const k of n.kids) setParents(k,n); }
+
+function serialize(doc){
+  const wide=doc.wide, H=wide?24:12, NL=wide?25:13;
+  let total=27;
+  for(const n of doc.top) total+=n.size(wide);
+  total+=NL+16;
+  const tail=4+120+16;
+  let pad = 16-((total+tail)%16); if(pad===0) pad=16;
+  total+=pad+tail;
+
+  const out=new Uint8Array(total), dv=new DataView(out.buffer);
+  let c=0;
+  for(let i=0;i<21;i++) out[c++]=HDR.charCodeAt(i);
+  out[c++]=0x1a; out[c++]=0x00;
+  dv.setUint32(c,doc.version,true); c+=4;
+
+  const write=(n,offset)=>{
+    const end=offset+n.size(wide);
+    let plen=0; for(const p of n.props) plen+=p.length;
+    if(wide){
+      dv.setBigUint64(c,BigInt(end),true); dv.setBigUint64(c+8,BigInt(n.props.length),true);
+      dv.setBigUint64(c+16,BigInt(plen),true); c+=24;
+    }else{
+      dv.setUint32(c,end,true); dv.setUint32(c+4,n.props.length,true);
+      dv.setUint32(c+8,plen,true); c+=12;
+    }
+    const nb=enc.encode(n.name);
+    out[c++]=nb.length; out.set(nb,c); c+=nb.length;
+    for(const p of n.props){ out.set(p,c); c+=p.length; }
+    let pos=offset+H+1+nb.length+plen;
+    for(const k of n.kids) pos=write(k,pos);
+    if(n.term){ c+=NL; pos+=NL; }
+    return pos;
+  };
+  let pos=27;
+  for(const n of doc.top) pos=write(n,pos);
+  c+=NL;
+  out.set(doc.footer,c); c+=16;
+  c+=pad;
+  dv.setUint32(c,doc.version,true); c+=4;
+  c+=120;
+  for(let i=0;i<16;i++) out[c++]=MAGIC[i];
+  return out;
+}
+
+/* ---- プロパティの読み書き --------------------------------------------- */
+function propType(p){ return String.fromCharCode(p[0]); }
+function readProp(p){
+  const t=propType(p), dv=new DataView(p.buffer,p.byteOffset,p.byteLength);
+  switch(t){
+    case "Y": return dv.getInt16(1,true);
+    case "C": return p[1]?1:0;
+    case "I": return dv.getInt32(1,true);
+    case "F": return dv.getFloat32(1,true);
+    case "D": return dv.getFloat64(1,true);
+    case "L": return dv.getBigInt64(1,true);
+    case "S": case "R": { const n=dv.getUint32(1,true); return p.slice(5,5+n); }
+    default: return null;
+  }
+}
+function propStr(p){
+  const t=propType(p); if(t!=="S"&&t!=="R") return null;
+  return dec.decode(readProp(p));
+}
+function arrayInfo(p){
+  const dv=new DataView(p.buffer,p.byteOffset,p.byteLength);
+  return {type:propType(p),len:dv.getUint32(1,true),enc:dv.getUint32(5,true),clen:dv.getUint32(9,true)};
+}
+function arrayLen(p){ return new DataView(p.buffer,p.byteOffset,p.byteLength).getUint32(1,true); }
+function readArray(p,limit){
+  const info=arrayInfo(p);
+  let raw=p.slice(13,13+info.clen);
+  if(info.enc===1) raw=pako.inflate(raw);
+  const dv=new DataView(raw.buffer,raw.byteOffset,raw.byteLength);
+  const sz=ARRAY[info.type], n=limit?Math.min(info.len,limit):info.len, out=[];
+  for(let i=0;i<n;i++){
+    const o=i*sz;
+    switch(info.type){
+      case "f": out.push(dv.getFloat32(o,true)); break;
+      case "d": out.push(dv.getFloat64(o,true)); break;
+      case "i": out.push(dv.getInt32(o,true)); break;
+      case "l": out.push(Number(dv.getBigInt64(o,true))); break;
+      case "b": case "c": out.push(dv.getInt8(o)); break;
+    }
+  }
+  return out;
+}
+function makeScalar(t,v){
+  const n=SCALAR[t], p=new Uint8Array(1+n), dv=new DataView(p.buffer);
+  p[0]=t.charCodeAt(0);
+  switch(t){
+    case "Y": dv.setInt16(1,v|0,true); break;
+    case "C": p[1]=v?1:0; break;
+    case "I": dv.setInt32(1,v|0,true); break;
+    case "F": dv.setFloat32(1,+v,true); break;
+    case "D": dv.setFloat64(1,+v,true); break;
+    case "L": dv.setBigInt64(1,BigInt(v),true); break;
+  }
+  return p;
+}
+function makeString(t,s){
+  const b=enc.encode(s), p=new Uint8Array(5+b.length), dv=new DataView(p.buffer);
+  p[0]=t.charCodeAt(0); dv.setUint32(1,b.length,true); p.set(b,5);
+  return p;
+}
+
+/* ==========================================================================
+   FBX の意味づけヘルパ
+   ========================================================================== */
+const CLASSMAP={Constraint:"Character"};
+function objName(o){
+  if(o.props.length<2) return "";
+  const s=propStr(o.props[1]);
+  return s===null ? "" : s.split("\u0000\u0001")[0];
+}
+function objSub(o){ return o.props.length>2 ? (propStr(o.props[2])||"") : ""; }
+function objId(o){ return o.props.length ? readProp(o.props[0]) : null; }
+function isMesh(o){ return o.name==="Geometry" && objSub(o)==="Mesh"; }
+function section(doc,n){ return doc.top.find(x=>x.name===n)||null; }
+function objectsOf(doc){ const s=section(doc,"Objects"); return s?s.kids:[]; }
+function connsOf(doc){ const s=section(doc,"Connections"); return s?s.kids:[]; }
+function layerElements(geo){
+  const m=new Map();
+  for(const k of geo.kids){
+    if(!k.name.startsWith("LayerElement")||k.name==="LayerElement") continue;
+    const ti=k.find("TypedIndex");
+    m.set(k.name.slice(12)+"["+(ti?readProp(ti.props[0]):0)+"]",k);
+  }
+  return m;
+}
+function mappingOf(le){
+  const m=le.find("MappingInformationType"), r=le.find("ReferenceInformationType");
+  return [m?propStr(m.props[0]):"", r?propStr(r.props[0]):""];
+}
+
+/* ---- 検査 -------------------------------------------------------------- */
+function audit(doc){
+  const R=[], objs=objectsOf(doc);
+  const push=(code,sev,target,detail,node,fix)=>R.push({code,sev,target,detail,node,fix});
+  const ids=new Set(); for(const o of objs) if(o.props.length) ids.add(String(objId(o)));
+
+  for(const o of objs){
+    if(!isMesh(o)) continue;
+    const v=o.find("Vertices");
+    if(v && !o.find("PolygonVertexIndex"))
+      push("no_polygons","fatal",objName(o),"頂点 "+(arrayLen(v.props[0])/3)+" 個だがポリゴンが皆無",o,"no_polygons");
+  }
+  for(const o of objs){
+    if(o.name!=="Geometry") continue;
+    const avail=layerElements(o);
+    for(const lay of o.findAll("Layer")) for(const le of lay.findAll("LayerElement")){
+      const t=le.find("Type"), ti=le.find("TypedIndex");
+      if(!t||!ti) continue;
+      const key=propStr(t.props[0]).slice(12)+"["+readProp(ti.props[0])+"]";
+      if(!avail.has(key)) push("dangling_layer","warn",objName(o),"存在しない "+key+" を参照",o,"dangling_layer");
+    }
+  }
+  for(const o of objs){
+    if(!isMesh(o)) continue;
+    const pv=o.find("PolygonVertexIndex"), vt=o.find("Vertices");
+    if(!pv||!vt) continue;
+    const nv=arrayLen(vt.props[0])/3;
+    let idx; try{ idx=readArray(pv.props[0]); }catch(e){ continue; }
+    let npoly=0,top=-1,run=0,degen=0;
+    for(const x of idx){ const r=x<0?-x-1:x; if(r>top) top=r; run++; if(x<0){ npoly++; if(run<3) degen++; run=0; } }
+    if(top>=nv) push("index_range","fatal",objName(o),"頂点索引 "+top+" ≥ 頂点数 "+nv,o);
+    if(run) push("unclosed_poly","fatal",objName(o),"最終ポリゴンが閉じていない",o);
+    if(degen) push("degenerate_poly","warn",objName(o),"退化ポリゴン "+degen+" 面",o);
+    const expect={ByPolygonVertex:idx.length,ByPolygon:npoly,ByVertice:nv,ByControlPoint:nv,AllSame:1};
+    const spec={Normal:["Normals",3,null],UV:["UV",2,"UVIndex"],Color:["Colors",4,"ColorIndex"],Material:["Materials",1,null]};
+    for(const [key,le] of layerElements(o)){
+      const typ=key.slice(0,key.indexOf("[")), s=spec[typ]; if(!s) continue;
+      const [m,r]=mappingOf(le), exp=expect[m]; if(exp===undefined) continue;
+      const d=le.find(s[0]); if(!d) continue;
+      const ndata=arrayLen(d.props[0])/s[1];
+      if(r==="IndexToDirect"&&s[2]){
+        const inode=le.find(s[2]);
+        if(!inode){ push("layer_index","warn",objName(o),typ+" が IndexToDirect だが索引配列なし",o); continue; }
+        let arr; try{ arr=readArray(inode.props[0]); }catch(e){ continue; }
+        if(arr.length!==exp) push("layer_length","warn",objName(o),typ+" 索引 "+arr.length+" 個 / 期待 "+exp,o);
+        let mx=-1; for(const x of arr) if(x>mx) mx=x;
+        if(mx>=ndata) push("layer_index","fatal",objName(o),typ+" 索引最大 "+mx+" ≥ 実体数 "+ndata,o);
+      }else if(ndata!==exp){
+        push("layer_length","warn",objName(o),typ+" ("+m+") "+ndata+" 個 / 期待 "+exp,o);
+      }
+    }
+  }
+  const kind=new Map(); for(const o of objs) if(o.props.length) kind.set(String(objId(o)),o.name);
+  const matOf=new Map(), geoOf=new Map();
+  for(const c of connsOf(doc)){
+    if(propStr(c.props[0])!=="OO") continue;
+    const s=String(readProp(c.props[1])), d=String(readProp(c.props[2]));
+    if(kind.get(s)==="Material"){ if(!matOf.has(d)) matOf.set(d,0); matOf.set(d,matOf.get(d)+1); }
+    else if(kind.get(s)==="Geometry"){ if(!geoOf.has(d)) geoOf.set(d,[]); geoOf.get(d).push(s); }
+  }
+  for(const o of objs){
+    if(!isMesh(o)) continue;
+    const gid=String(objId(o));
+    let nmat=0;
+    for(const [m,gs] of geoOf) if(gs.includes(gid)) nmat+=matOf.get(m)||0;
+    for(const [key,le] of layerElements(o)){
+      if(!key.startsWith("Material")) continue;
+      const d=le.find("Materials"); if(!d) continue;
+      let arr; try{ arr=readArray(d.props[0]); }catch(e){ continue; }
+      if(!arr.length) continue;
+      let mx=-1,mn=1e9; for(const x of arr){ if(x>mx)mx=x; if(x<mn)mn=x; }
+      if(mx>=nmat||mn<0) push("material_index","fatal",objName(o),"マテリアル索引 "+mn+".."+mx+" / 接続 "+nmat+" 個",o);
+    }
+  }
+  let nEmpty=0,nClu=0;
+  for(const o of objs){
+    if(o.name!=="Deformer"||objSub(o)!=="Cluster") continue;
+    nClu++;
+    const ix=o.find("Indexes");
+    if(!ix||arrayLen(ix.props[0])===0) nEmpty++;
+  }
+  if(nEmpty) push("empty_cluster","info","(シーン全体)","空のスキンクラスタ "+nEmpty+" 個 / 全 "+nClu+" 個",null,"empty_cluster");
+
+  let dang=0;
+  for(const c of connsOf(doc)) for(const i of [1,2]){
+    const v=c.props[i]?readProp(c.props[i]):null;
+    if(typeof v==="bigint"&&v!==0n&&!ids.has(String(v))) dang++;
+  }
+  if(dang) push("dangling_conn","fatal","(シーン全体)","存在しないオブジェクトを指す接続 "+dang+" 本",null,"dangling_conn");
+
+  let nonascii=0,junk=0,nan=0,firstNA="";
+  for(const root of doc.top) for(const n of root.walk()){
+    if(n.name==="Properties70"){
+      for(const p of n.kids){
+        if(p.name!=="P"||!p.props.length) continue;
+        const nm=propStr(p.props[0]); if(nm===null) continue;
+        if(/[^\x00-\x7F]/.test(nm)){ nonascii++; if(!firstNA) firstNA=nm; }
+        for(let i=3;i<p.props.length;i++){
+          const v=propStr(p.props[i]);
+          if(v&&v.startsWith("<bpy id prop:")){ junk++; break; }
+        }
+      }
+    }
+    for(const p of n.props){
+      const t=propType(p);
+      if(t==="F"||t==="D"){ const v=readProp(p); if(!isFinite(v)) nan++; }
+    }
+  }
+  if(nonascii) push("nonascii_prop","info","(シーン全体)","非 ASCII 名のプロパティ "+nonascii+" 個 ("+firstNA+" ほか)",null,"junk_props");
+  if(junk) push("exporter_junk","info","(シーン全体)","Blender の残骸プロパティ "+junk+" 個",null,"junk_props");
+  if(nan) push("non_finite","fatal","(シーン全体)","NaN / Inf のスカラ値 "+nan+" 個",null);
+
+  const rank={fatal:0,warn:1,info:2};
+  R.sort((a,b)=>rank[a.sev]-rank[b.sev]);
+  return R;
+}
+
+/* ---- 修復 -------------------------------------------------------------- */
+function dropObjects(doc,pred){
+  const sec=section(doc,"Objects"); if(!sec) return 0;
+  const dead=new Set(), keep=[];
+  for(const o of sec.kids){
+    if(o.props.length&&pred(o)) dead.add(String(objId(o))); else keep.push(o);
+  }
+  sec.kids=keep;
+  const cs=section(doc,"Connections");
+  if(cs) cs.kids=cs.kids.filter(c=>![1,2].some(i=>c.props[i]&&dead.has(String(readProp(c.props[i])))));
+  return dead.size;
+}
+function pruneConns(doc){
+  const ids=new Set(); for(const o of objectsOf(doc)) if(o.props.length) ids.add(String(objId(o)));
+  const cs=section(doc,"Connections"); if(!cs) return 0;
+  const before=cs.kids.length;
+  cs.kids=cs.kids.filter(c=>[1,2].every(i=>{
+    const v=c.props[i]?readProp(c.props[i]):null;
+    return !(typeof v==="bigint"&&v!==0n&&!ids.has(String(v)));
+  }));
+  return before-cs.kids.length;
+}
+function fixDefinitions(doc){
+  const cnt=new Map();
+  for(const o of objectsOf(doc)){
+    if(!o.props.length) continue;
+    const c=CLASSMAP[o.name]||o.name;
+    cnt.set(c,(cnt.get(c)||0)+1);
+  }
+  const sec=section(doc,"Definitions"); if(!sec) return;
+  let total=0; for(const v of cnt.values()) total+=v;
+  const keep=[];
+  for(const d of sec.kids){
+    if(d.name==="Count"){ d.props[0]=makeScalar("I",total+1); keep.push(d); }
+    else if(d.name==="ObjectType"){
+      const cls=propStr(d.props[0]);
+      if(cls==="GlobalSettings"){ keep.push(d); }
+      else if(cnt.get(cls)){
+        const c=d.find("Count"); if(c) c.props[0]=makeScalar("I",cnt.get(cls));
+        keep.push(d);
+      }
+    } else keep.push(d);
+  }
+  sec.kids=keep;
+}
+const FIXES={
+  no_polygons:{label:"面のないメッシュを除去",run(doc){
+    return ["面なしメッシュ",dropObjects(doc,o=>isMesh(o)&&o.find("Vertices")&&!o.find("PolygonVertexIndex")),"個を除去"];
+  }},
+  dangling_layer:{label:"壊れたレイヤ参照を除去",run(doc){
+    let n=0;
+    for(const o of objectsOf(doc)){
+      if(o.name!=="Geometry") continue;
+      const avail=layerElements(o);
+      for(const lay of o.findAll("Layer")){
+        lay.kids=lay.kids.filter(le=>{
+          if(le.name!=="LayerElement") return true;
+          const t=le.find("Type"), ti=le.find("TypedIndex");
+          if(!t||!ti) return true;
+          const key=propStr(t.props[0]).slice(12)+"["+readProp(ti.props[0])+"]";
+          if(avail.has(key)) return true;
+          n++; return false;
+        });
+      }
+    }
+    return ["壊れたレイヤ参照",n,"件を除去"];
+  }},
+  empty_cluster:{label:"空のスキンクラスタを除去",run(doc){
+    return ["空のスキンクラスタ",dropObjects(doc,o=>{
+      if(o.name!=="Deformer"||objSub(o)!=="Cluster") return false;
+      const ix=o.find("Indexes"); return !ix||arrayLen(ix.props[0])===0;
+    }),"個を除去"];
+  }},
+  junk_props:{label:"不正なカスタムプロパティを除去",run(doc){
+    let n=0;
+    for(const root of doc.top) for(const node of root.walk()){
+      if(node.name!=="Properties70") continue;
+      node.kids=node.kids.filter(p=>{
+        if(p.name!=="P"||!p.props.length) return true;
+        const nm=propStr(p.props[0]); if(nm===null) return true;
+        if(/[^\x00-\x7F]/.test(nm)){ n++; return false; }
+        for(let i=3;i<p.props.length;i++){
+          const v=propStr(p.props[i]);
+          if(v&&v.startsWith("<bpy id prop:")){ n++; return false; }
+        }
+        return true;
+      });
+    }
+    return ["不正なカスタムプロパティ",n,"個を除去"];
+  }},
+  dangling_conn:{label:"参照切れの接続を除去",run(doc){
+    return ["参照切れの接続",pruneConns(doc),"本を除去"];
+  }}
+};
+
+/* ==========================================================================
+   UI
+   ========================================================================== */
+const $=id=>document.getElementById(id);
+let doc=null, srcBytes=null, srcName="", selected=null, tab="prop",
+    issues=[], history=[], changes=[], expanded=new WeakSet(), pageOf=new WeakMap(),
+    filter="", roundtrip=null;
+
+function toast(msg,err){
+  const t=$("toast"); t.textContent=msg; t.className="toast on"+(err?" err":"");
+  clearTimeout(toast._t); toast._t=setTimeout(()=>t.className="toast",2600);
+}
+function esc(s){ return String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+function fmt(n){ return n.toLocaleString("en-US"); }
+
+/* ---- 読み込み ---------------------------------------------------------- */
+async function loadFile(f){
+  try{
+    const buf=await f.arrayBuffer();
+    srcBytes=new Uint8Array(buf); srcName=f.name;
+    doc=parse(buf);
+    const out=serialize(doc);
+    roundtrip = out.length===srcBytes.length && out.every((v,i)=>v===srcBytes[i]);
+    selected=null; history=[]; changes=[]; expanded=new WeakSet(); pageOf=new WeakMap(); filter="";
+    for(const n of doc.top) expanded.add(n);
+    issues=audit(doc);
+    $("empty").hidden=true; $("map").hidden=false; $("split").hidden=false;
+    $("save").disabled=false; $("find").value="";
+    renderAll();
+    toast(f.name+" を読み込みました");
+  }catch(e){
+    toast(e.message,true);
+    console.error(e);
+  }
+}
+
+/* ---- byte map ---------------------------------------------------------- */
+function computeOffsets(){
+  let pos=27;
+  const walk=(n)=>{
+    n.off=pos;
+    const H=doc.wide?24:12;
+    let plen=0; for(const p of n.props) plen+=p.length;
+    pos+=H+1+utf8len(n.name)+plen;
+    for(const k of n.kids) walk(k);
+    if(n.term) pos+=H+1;
+  };
+  for(const n of doc.top) walk(n);
+  return pos;
+}
+function renderMap(){
+  const total=serializeSize();
+  const track=$("track");
+  [...track.querySelectorAll(".seg")].forEach(e=>e.remove());
+  const cur=$("cursor");
+  const segs=doc.top.map(n=>({n,size:n.size(doc.wide)}));
+  segs.push({n:null,size:total-27-segs.reduce((a,b)=>a+b.size,0)});
+  for(const s of segs){
+    const d=document.createElement("div");
+    d.className="seg"; d.style.flex=s.size+" 0 0";
+    d.innerHTML="<b>"+esc(s.n?s.n.name:"footer")+"</b>";
+    if(s.n){
+      d.title=s.n.name+" — "+fmt(s.size)+" bytes";
+      d.onclick=()=>{ expanded.add(s.n); select(s.n); };
+    }
+    track.insertBefore(d,cur);
+  }
+  $("mapsize").textContent=fmt(total)+" BYTES";
+  updateCursor();
+}
+function serializeSize(){
+  let total=27;
+  for(const n of doc.top) total+=n.size(doc.wide);
+  total+=(doc.wide?25:13)+16;
+  const tail=4+120+16;
+  let pad=16-((total+tail)%16); if(pad===0) pad=16;
+  return total+pad+tail;
+}
+function updateCursor(){
+  const cur=$("cursor"), total=serializeSize();
+  if(!selected){ cur.className="cursor"; return; }
+  computeOffsets();
+  const size=selected.size(doc.wide);
+  cur.style.left=(selected.off/total*100)+"%";
+  cur.style.width=Math.max(0.15,size/total*100)+"%";
+  cur.className="cursor on";
+  $("maplabel").textContent="FILE LAYOUT  ·  "+selected.name.toUpperCase()+" @ "+fmt(selected.off)+" +"+fmt(size);
+}
+
+/* ---- tree -------------------------------------------------------------- */
+function scalarText(p){
+  const r=readProp(p);
+  if(typeof r==="bigint") return String(r);
+  if(typeof r==="number") return Number.isInteger(r)?String(r):r.toFixed(4);
+  return "";
+}
+function nodeLabel(n){
+  let v="",t="";
+  if(!n.props.length) return {v,t};
+  const p0=n.props[0], ty=propType(p0);
+
+  if(n.name==="P"){
+    // Properties70 の項目: 名前 = 値 (値はプロパティ 4 以降)
+    v=propStr(p0)||"";
+    const parts=[];
+    for(let i=4;i<Math.min(n.props.length,7);i++){
+      const s=propStr(n.props[i]);
+      parts.push(s!==null?s:scalarText(n.props[i]));
+    }
+    t=parts.filter(x=>x!=="").join(" ");
+  }else if(n.name==="C"){
+    // 接続: 種別 と 2 つの ID
+    v=propStr(p0)||"";
+    t=n.props.slice(1,3).map(scalarText).join(" → ");
+  }else if(ty==="L"&&n.props.length>=3){
+    v=objName(n); t=objSub(n);
+  }else if(ARRAY[ty]!==undefined){
+    t="["+ARRAY_LABEL(ty)+" × "+fmt(arrayLen(p0))+"]";
+  }else if(ty==="S"||ty==="R"){
+    v=(propStr(p0)||"").split("\u0000\u0001")[0];
+  }else{
+    v=scalarText(p0);
+  }
+  if(v.length>48) v=v.slice(0,48)+"…";
+  if(t.length>40) t=t.slice(0,40)+"…";
+  return {v,t};
+}
+function ARRAY_LABEL(t){ return {f:"f32",d:"f64",i:"i32",l:"i64",b:"bool",c:"u8"}[t]||t; }
+
+function renderTree(){
+  const host=$("tree"); host.innerHTML="";
+  const frag=document.createDocumentFragment();
+  const emit=(n,depth)=>{
+    const row=document.createElement("div");
+    row.className="trow"+(n===selected?" sel":"")+(n._edited?" edited":"");
+    row.tabIndex=0;
+    const hasKids=n.kids.length>0;
+    const open=expanded.has(n);
+    const {v,t}=nodeLabel(n);
+    row.innerHTML=
+      '<span class="tw" style="margin-left:'+(depth*13)+'px">'+(hasKids?(open?"▾":"▸"):"·")+'</span>'+
+      '<span class="tn">'+esc(n.name)+'</span>'+
+      (v?'<span class="tv">'+esc(v)+'</span>':"")+
+      (t?'<span class="tt">'+esc(t)+'</span>':"")+
+      (hasKids?'<span class="tc">'+fmt(n.kids.length)+'</span>':"");
+    row.querySelector(".tw").onclick=e=>{
+      e.stopPropagation();
+      if(!hasKids) return;
+      open?expanded.delete(n):expanded.add(n);
+      renderTree();
+    };
+    row.onclick=()=>select(n);
+    row.onkeydown=e=>{
+      if(e.key==="Enter"||e.key===" "){ e.preventDefault(); select(n); }
+      if(e.key==="ArrowRight"&&hasKids&&!open){ expanded.add(n); renderTree(); }
+      if(e.key==="ArrowLeft"&&open){ expanded.delete(n); renderTree(); }
+    };
+    frag.appendChild(row);
+    if(open){
+      let kids=n.kids;
+      if(filter&&depth<=1){
+        const f=filter.toLowerCase();
+        kids=kids.filter(k=>{
+          const {v,t}=nodeLabel(k);
+          return (k.name+" "+v+" "+t).toLowerCase().includes(f);
+        });
+      }
+      const page=pageOf.get(n)||300;
+      for(let i=0;i<Math.min(kids.length,page);i++) emit(kids[i],depth+1);
+      if(kids.length>page){
+        const m=document.createElement("div");
+        m.className="more";
+        m.textContent="さらに表示  (残り "+fmt(kids.length-page)+" 件)";
+        m.onclick=()=>{ pageOf.set(n,page+500); renderTree(); };
+        frag.appendChild(m);
+      }
+    }
+  };
+  for(const n of doc.top) emit(n,0);
+  host.appendChild(frag);
+}
+function select(n){
+  selected=n; tab="prop";
+  document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("on",b.dataset.tab==="prop"));
+  renderTree(); renderPanel(); updateCursor();
+}
+function reveal(n){
+  let p=n.parent;
+  while(p){ expanded.add(p); p=p.parent; }
+  select(n);
+  requestAnimationFrame(()=>{
+    const el=$("tree").querySelector(".trow.sel");
+    if(el) el.scrollIntoView({block:"center"});
+  });
+}
+
+/* ---- panel ------------------------------------------------------------- */
+function renderPanel(){
+  const el=$("panel");
+  if(tab==="prop") el.innerHTML=selected?panelProp(selected):'<p class="note">左のツリーからノードを選ぶと、プロパティと生バイトが表示されます。</p>';
+  else if(tab==="audit") el.innerHTML=panelAudit();
+  else if(tab==="log") el.innerHTML=panelLog();
+  else el.innerHTML=panelHelp();
+  wirePanel();
+}
+function panelProp(n){
+  computeOffsets();
+  const size=n.size(doc.wide);
+  const path=(()=>{ const a=[]; let p=n; while(p){ a.unshift(p.name); p=p.parent; } return a.join(" / "); })();
+  let h='<div class="sec">NODE</div><dl class="kv">'+
+    '<dt>名前</dt><dd><em>'+esc(n.name)+'</em></dd>'+
+    '<dt>パス</dt><dd>'+esc(path)+'</dd>'+
+    '<dt>バイト位置</dt><dd>'+fmt(n.off)+' &nbsp;+'+fmt(size)+'</dd>'+
+    '<dt>子ノード</dt><dd>'+fmt(n.kids.length)+'</dd></dl>';
+
+  h+='<div class="sec">PROPERTIES ('+n.props.length+')</div>';
+  if(!n.props.length) h+='<p class="note">プロパティなし</p>';
+  else{
+    h+='<table class="props"><tr><th>#</th><th>型</th><th>値</th></tr>';
+    n.props.forEach((p,i)=>{
+      const t=propType(p);
+      let cell;
+      if(ARRAY[t]!==undefined){
+        const info=arrayInfo(p);
+        cell='<span class="arr">'+ARRAY_LABEL(t)+' × '+fmt(info.len)+
+             (info.enc===1?' &nbsp;zlib':'')+
+             '<button data-arr="'+i+'">中身を見る</button></span><div class="dump" id="dump'+i+'" hidden></div>';
+      }else if(t==="S"||t==="R"){
+        const s=t==="S"?propStr(p):"(raw "+fmt(readProp(p).length)+" bytes)";
+        cell = t==="S"
+          ? '<input data-edit="'+i+'" data-type="S" value="'+esc(s.replace(/\u0000\u0001/g,"::"))+'">'
+          : '<span class="val">'+esc(s)+'</span>';
+      }else{
+        const v=readProp(p);
+        cell='<input data-edit="'+i+'" data-type="'+t+'" value="'+esc(String(v))+'">';
+      }
+      h+='<tr><td class="ty">'+i+'</td><td class="ty">'+t+'</td><td class="val">'+cell+'</td></tr>';
+    });
+    h+='</table><p class="note" style="margin-top:8px">値を書き換えて Enter で確定します。文字列内の <code>::</code> は FBX の名前区切り (0x00 0x01) を表します。</p>';
+  }
+
+  h+='<div class="sec">RAW BYTES</div>'+hexDump(n);
+  h+='<div class="acts">'+
+     (n.parent?'<button class="btn" id="delnode">このノードを削除</button>':"")+
+     '<button class="btn" id="expand-all">配下をすべて展開</button></div>';
+  return h;
+}
+function hexDump(n){
+  const H=doc.wide?24:12;
+  const nb=enc.encode(n.name);
+  let plen=0; for(const p of n.props) plen+=p.length;
+  const head=new Uint8Array(H+1+nb.length);
+  const dv=new DataView(head.buffer);
+  if(doc.wide){
+    dv.setBigUint64(0,BigInt(n.off+n.size(doc.wide)),true);
+    dv.setBigUint64(8,BigInt(n.props.length),true);
+    dv.setBigUint64(16,BigInt(plen),true);
+  }else{
+    dv.setUint32(0,n.off+n.size(doc.wide),true);
+    dv.setUint32(4,n.props.length,true); dv.setUint32(8,plen,true);
+  }
+  head[H]=nb.length; head.set(nb,H+1);
+  const parts=[head]; for(const p of n.props) parts.push(p);
+  let tot=0; for(const p of parts) tot+=p.length;
+  const buf=new Uint8Array(Math.min(tot,256)); let c=0;
+  for(const p of parts){ for(let i=0;i<p.length&&c<buf.length;i++) buf[c++]=p[i]; }
+  let out="";
+  for(let i=0;i<buf.length;i+=16){
+    const off=(n.off+i).toString(16).padStart(8,"0");
+    let hexs="",asc="";
+    for(let j=0;j<16;j++){
+      if(i+j<buf.length){
+        hexs+=buf[i+j].toString(16).padStart(2,"0")+" ";
+        const ch=buf[i+j];
+        asc+=(ch>=32&&ch<127)?String.fromCharCode(ch):".";
+      }else hexs+="   ";
+    }
+    out+='<span class="o">'+off+'</span>  <span class="h">'+hexs+'</span> '+esc(asc)+"\n";
+  }
+  if(tot>256) out+='<span class="o">…  以降 '+fmt(tot-256)+' バイト省略</span>';
+  return '<div class="hex">'+out+'</div>';
+}
+function panelAudit(){
+  if(!issues.length) return '<p class="note">問題は見つかりませんでした。</p>';
+  const fatal=issues.filter(i=>i.sev==="fatal").length;
+  let h='<div class="sec">検査結果  '+issues.length+' 件 (致命 '+fatal+')</div>';
+  const fixable=[...new Set(issues.filter(i=>i.fix).map(i=>i.fix))];
+  if(fixable.length){
+    h+='<div class="acts" style="margin:0 0 14px">';
+    for(const f of fixable) h+='<button class="btn" data-fix="'+f+'">'+esc(FIXES[f].label)+'</button>';
+    h+='</div>';
+  }
+  issues.forEach((i,n)=>{
+    h+='<div class="issue" data-issue="'+n+'">'+
+       '<span class="sev '+i.sev+'">'+(i.sev==="fatal"?"致命":i.sev==="warn"?"警告":"情報")+'</span>'+
+       '<div class="itxt"><div class="icode">'+esc(i.code)+'</div>'+
+       '<div class="itarget">'+esc(i.target)+'</div>'+
+       '<div class="idetail">'+esc(i.detail)+'</div></div></div>';
+  });
+  return h;
+}
+function panelLog(){
+  if(!changes.length) return '<p class="note">まだ変更はありません。</p>';
+  let h='<div class="sec">変更 '+changes.length+' 件</div>';
+  for(let i=changes.length-1;i>=0;i--) h+='<div class="log"><b>'+String(i+1).padStart(2,"0")+'</b>  '+changes[i]+'</div>';
+  return h;
+}
+function panelHelp(){
+  return '<div class="sec">使い方</div><p class="note">'+
+  '<b>ツリー</b>：FBX のノード構造をそのまま表示します。▸ で開閉、行を選ぶと右に詳細が出ます。上部の帯はファイル全体のバイト配置で、選択中のノードが占める範囲が光ります。<br><br>'+
+  '<b>編集</b>：プロパティの値を書き換えて Enter で確定します。ノード単位の削除もできます。配列 (頂点や法線) は読み取り専用です。<br><br>'+
+  '<b>検査</b>：開けない・固まる原因になりやすい破綻を洗い出します。<code>no_polygons</code> は頂点だけあって面が 1 枚もないメッシュで、MotionBuilder が読み込み中に停止する原因になります。修復ボタンで一括除去できます。<br><br>'+
+  '<b>保存</b>：現在の状態を .fbx として書き出します。<br><br>'+
+  '<b>可逆性について</b>：プロパティを型ごと生バイト列のまま保持しているため、何も編集せずに保存すると元ファイルとバイト単位で完全一致します。読み込み時にこの検証を自動で行い、上部に結果を表示します。<code>可逆 OK</code> と出ていれば、編集した箇所以外は一切変化しません。</p>';
+}
+
+function wirePanel(){
+  const el=$("panel");
+  el.querySelectorAll("[data-edit]").forEach(inp=>{
+    inp.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); applyEdit(inp); } };
+    inp.onblur=()=>applyEdit(inp);
+  });
+  el.querySelectorAll("[data-arr]").forEach(b=>{
+    b.onclick=()=>{
+      const i=+b.dataset.arr, d=$("dump"+i);
+      if(!d.hidden){ d.hidden=true; b.textContent="中身を見る"; return; }
+      try{
+        const v=readArray(selected.props[i],400);
+        const total=arrayLen(selected.props[i]);
+        d.textContent=v.map(x=>typeof x==="number"&&!Number.isInteger(x)?x.toFixed(6):x).join(", ")+
+          (total>400?"  …  (全 "+fmt(total)+" 要素)":"");
+      }catch(e){ d.textContent="展開に失敗: "+e.message; }
+      d.hidden=false; b.textContent="閉じる";
+    };
+  });
+  const del=$("delnode"); if(del) del.onclick=deleteSelected;
+  const exp=$("expand-all"); if(exp) exp.onclick=()=>{
+    for(const n of selected.walk()) expanded.add(n);
+    renderTree();
+  };
+  el.querySelectorAll("[data-issue]").forEach(d=>{
+    d.onclick=()=>{ const i=issues[+d.dataset.issue]; if(i.node) reveal(i.node); };
+  });
+  el.querySelectorAll("[data-fix]").forEach(b=>{
+    b.onclick=()=>runFix(b.dataset.fix);
+  });
+}
+
+/* ---- 編集操作 ---------------------------------------------------------- */
+function applyEdit(inp){
+  const i=+inp.dataset.edit, t=inp.dataset.type, n=selected;
+  const old=n.props[i];
+  let next;
+  try{
+    if(t==="S") next=makeString("S",inp.value.replace(/::/g,"\u0000\u0001"));
+    else next=makeScalar(t,t==="L"?inp.value.trim():Number(inp.value));
+  }catch(e){ toast("値を解釈できません: "+e.message,true); return; }
+  if(old.length===next.length&&old.every((v,k)=>v===next[k])) return;
+  history.push({undo(){ n.props[i]=old; }});
+  n.props[i]=next; n._edited=true;
+  changes.push(esc(n.name)+" のプロパティ ["+i+"] を書き換え");
+  afterChange();
+}
+function deleteSelected(){
+  const n=selected, p=n.parent;
+  if(!p) return;
+  const idx=p.kids.indexOf(n);
+  history.push({undo(){ p.kids.splice(idx,0,n); }});
+  p.kids.splice(idx,1);
+  changes.push("ノード <s>"+esc(n.name)+"</s> を削除");
+  selected=p;
+  afterChange();
+}
+function runFix(key){
+  const f=FIXES[key];
+  const snapshot=serialize(doc);
+  history.push({undo(){
+    const d=parse(snapshot.buffer.slice(snapshot.byteOffset,snapshot.byteOffset+snapshot.byteLength));
+    doc.top=d.top; doc.footer=d.footer; selected=null;
+  }});
+  const [what,n,how]=f.run(doc);
+  if(!n){ history.pop(); toast("対象がありませんでした"); return; }
+  pruneConns(doc); fixDefinitions(doc);
+  changes.push(esc(what)+" <b>"+fmt(n)+"</b> "+esc(how));
+  selected=null;
+  afterChange();
+  toast(what+" "+fmt(n)+" "+how);
+}
+function afterChange(){
+  for(const n of doc.top) setParents(n,null);
+  issues=audit(doc);
+  $("undo").disabled=history.length===0;
+  renderAll();
+}
+function undo(){
+  const h=history.pop(); if(!h) return;
+  h.undo(); changes.pop();
+  for(const n of doc.top) setParents(n,null);
+  issues=audit(doc);
+  $("undo").disabled=history.length===0;
+  renderAll();
+  toast("元に戻しました");
+}
+
+/* ---- chips / render ---------------------------------------------------- */
+function renderChips(){
+  const objs=objectsOf(doc);
+  const fatal=issues.filter(i=>i.sev==="fatal").length;
+  const c=[];
+  c.push('<span class="chip">FBX '+doc.version+'</span>');
+  c.push('<span class="chip">'+(doc.wide?"64":"32")+' BIT</span>');
+  c.push('<span class="chip">OBJ '+fmt(objs.length)+'</span>');
+  c.push('<span class="chip '+(roundtrip?"ok":"bad")+'">可逆 '+(roundtrip?"OK":"NG")+'</span>');
+  if(fatal) c.push('<span class="chip bad">致命 '+fatal+'</span>');
+  else if(issues.length) c.push('<span class="chip">指摘 '+issues.length+'</span>');
+  else c.push('<span class="chip ok">問題なし</span>');
+  if(changes.length) c.push('<span class="chip hot">変更 '+changes.length+'</span>');
+  $("chips").innerHTML=c.join("");
+  $("fname").textContent=srcName;
+  const fatalN=fatal;
+  $("badge").textContent=fatalN?String(fatalN):"";
+}
+function renderAll(){
+  computeOffsets(); renderChips(); renderMap(); renderTree(); renderPanel();
+}
+
+/* ---- events ------------------------------------------------------------ */
+$("open").onclick=()=>$("file").click();
+$("dz").onclick=()=>$("file").click();
+$("file").onchange=e=>{ if(e.target.files[0]) loadFile(e.target.files[0]); e.target.value=""; };
+$("undo").onclick=undo;
+$("save").onclick=()=>{
+  const out=serialize(doc);
+  const base=srcName.replace(/\.fbx$/i,"");
+  const name=changes.length?base+"_edited.fbx":base+".fbx";
+  const url=URL.createObjectURL(new Blob([out],{type:"application/octet-stream"}));
+  const a=document.createElement("a"); a.href=url; a.download=name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  const fatal=issues.filter(i=>i.sev==="fatal").length;
+  toast(fatal?name+" を保存 (致命的問題が "+fatal+" 件残っています)":name+" を保存しました",!!fatal);
+};
+$("find").oninput=e=>{ filter=e.target.value.trim(); pageOf=new WeakMap(); renderTree(); };
+document.querySelectorAll(".tab").forEach(b=>{
+  b.onclick=()=>{
+    tab=b.dataset.tab;
+    document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x===b));
+    renderPanel();
+  };
+});
+["dragenter","dragover"].forEach(ev=>document.addEventListener(ev,e=>{
+  e.preventDefault(); document.body.classList.add("dragging");
+}));
+["dragleave","drop"].forEach(ev=>document.addEventListener(ev,e=>{
+  e.preventDefault();
+  if(ev==="drop"||e.relatedTarget===null) document.body.classList.remove("dragging");
+}));
+document.addEventListener("drop",e=>{
+  const f=e.dataTransfer.files[0];
+  if(f) loadFile(f);
+});
+document.addEventListener("keydown",e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key==="z"&&doc){ e.preventDefault(); undo(); }
+  if((e.ctrlKey||e.metaKey)&&e.key==="s"&&doc){ e.preventDefault(); $("save").click(); }
+});
+</script>
+</body>
+</html>
